@@ -43,6 +43,7 @@ impl Contract {
 
     #[private]
     pub fn evaluate_lookup_callback(
+        &mut self,
         #[callback_result] last_result: Result<String, PromiseError>,
         contract_name: AccountId,
         random_value: String,
@@ -50,7 +51,11 @@ impl Contract {
         //  The callback only has access to the last action's result
         if let Ok(result) = last_result {
             log!(format!("The last result is {:?}", result));
-
+            self.add_record_value(
+                contract_name,
+                String::from("evaluate lookup callback"),
+                random_value == result,
+            );
             random_value == result
         } else {
             log!("The batch call failed and all calls got reverted");
@@ -99,9 +104,12 @@ impl Contract {
         //  The callback only has access to the last action's result
         if let Ok(result) = last_result {
             log!(format!("The last result is {:?}", result));
+            self.add_record_value(contract_name, String::from("evaluate_vector"), true);
             true
         } else {
             log!("The batch call failed and all calls got reverted");
+            self.add_record_value(contract_name, String::from("evaluate_vector"), false);
+
             false
         }
     }
@@ -153,55 +161,62 @@ impl Contract {
                 "The vector returned from the contract is {:?}",
                 result
             ));
+            self.add_record_value(contract_name, String::from("multi_vec"), true);
             test_vector.eq(&result)
         } else {
             log!("The batch call failed and all calls got reverted");
+            self.add_record_value(contract_name, String::from("multi_vec"), false);
             false
         }
     }
 
-    // pub fn add_val_to_map<T>(key: String, val: T, contract_name: AccountId) {
-    //     // Setup Arguments
-    //     let add_map_args = json!({"key":key,"value":val}).to_string().to_bytes();
-    //     Promise::new(&contract_name).function_call(
-    //         "add_to_map",
-    //         add_map_args,
-    //         NO_DEPOSIT,
-    //         Gas(5 * TGAS),
-    //     );
-    // }
+    pub fn add_val_to_map(key: String, val: String, contract_name: AccountId) {
+        // Setup Arguments
+        let add_map_args = json!({"key":key,"value":val})
+            .to_string()
+            .as_bytes()
+            .to_vec();
+        Promise::new(contract_name).function_call(
+            "add_to_map".to_string(),
+            add_map_args,
+            NO_DEPOSIT,
+            Gas(5 * TGAS),
+        );
+    }
 
-    // pub fn get_val_from_map(key: String, contract_name: AccountId) -> Promise {
-    //     let get_map_args = json!({ "key": key }).to_string().to_bytes();
-    //     Promise::new(&contract_name)
-    //         .function_call("get_from_map", get_map_args, NO_DEPOSIT, Gas(5 * TGAS))
-    //         .then(
-    //             Self::ext(env::current_account_id())
-    //                 .with_callback(Self::get_val_from_map_callback::<T>)
-    //                 .unwrap_or_default()
-    //                 .into(),
-    //         )
-    // }
+    pub fn get_val_from_map(key: String, contract_name: AccountId) -> Promise {
+        let get_map_args = json!({ "key": key }).to_string().as_bytes().to_vec();
+        Promise::new(contract_name.clone())
+            .function_call(
+                "get_from_map".to_string(),
+                get_map_args,
+                NO_DEPOSIT,
+                Gas(5 * TGAS),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas(5 * TGAS))
+                    .get_val_from_map_callback(contract_name.clone()),
+            )
+    }
 
-    // #[private]
-    // pub fn get_val_from_map_callback<T: BorshDeserialize>(
-    //     #[callback_result] last_result: Result<Vec<u8>, PromiseError>,
-    //     contract_name: AccountId,
-    // ) -> T {
-    //     if let Ok(result) = last_result {
-    //         // Deserialize the result into the specified data type T
-    //         match BorshDeserialize::try_from_slice(&result) {
-    //             Ok(val) => {
-    //                 log!(format!("The last result is {:?}", val));
-    //                 return val;
-    //             }
-    //             Err(e) => log!(format!("Deserialization error: {:?}", e)),
-    //         }
-    //     } else {
-    //         log!("The batch call failed and all calls got reverted");
-    //     }
-
-    //     // Return a default value for the specified data type T
-    //     T::default()
-    // }
+    #[private]
+    pub fn get_val_from_map_callback(
+        #[callback_result] last_result: Result<Vec<u8>, PromiseError>,
+        contract_name: AccountId,
+    ) -> String {
+        if let Ok(result) = last_result {
+            // Deserialize the result into the specified data type T
+            match BorshDeserialize::try_from_slice(&result) {
+                Ok(val) => {
+                    log!(format!("The last result is {:?}", val));
+                    return val;
+                }
+                Err(e) => String::from("value not found"),
+            }
+        } else {
+            log!("The batch call failed and all calls got reverted");
+            String::from("value not found")
+        }
+    }
 }

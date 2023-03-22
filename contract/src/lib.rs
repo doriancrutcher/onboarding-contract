@@ -4,6 +4,8 @@ use near_sdk::env::{predecessor_account_id, random_seed, signer_account_id};
 use near_sdk::serde_json::json;
 use near_sdk::{env, log, near_bindgen, AccountId, Gas, Promise, PromiseError};
 
+use std::collections::HashMap;
+
 pub mod collection;
 pub mod external;
 pub mod hello_near;
@@ -19,7 +21,7 @@ pub const NO_ARGS: Vec<u8> = vec![];
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Contract {
-    records: LookupMap<AccountId, bool>,
+    records: LookupMap<AccountId, HashMap<String, bool>>,
 }
 
 impl Default for Contract {
@@ -39,5 +41,14 @@ impl Contract {
         Self {
             records: LookupMap::new(b"r".to_vec()),
         }
+    }
+
+    pub fn add_record_value(&mut self, account_id: AccountId, key: String, value: bool) {
+        let mut result_map = self
+            .records
+            .get(&account_id)
+            .unwrap_or_else(|| HashMap::new());
+        result_map.insert(key, value);
+        self.records.insert(&account_id, &result_map);
     }
 }

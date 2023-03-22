@@ -37,15 +37,12 @@ impl Contract {
         if let Ok(result) = last_result {
             log!(format!("The last result is {result}"));
             let output = result == random_string;
-            self.records.insert(&contract_name, &output);
+
+            self.add_record_value(contract_name, String::from("hello_near_contract"), output);
             output
         } else {
             log!("The batch call failed and all calls got reverted");
             false
         }
-    }
-
-    pub fn account_participation(&self, account_name: AccountId) -> bool {
-        self.records.get(&account_name).unwrap_or(false)
     }
 }
