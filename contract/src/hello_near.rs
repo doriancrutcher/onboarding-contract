@@ -1,13 +1,15 @@
-use crate::*;
+use near_sdk::serde_json::json;
+use near_sdk::{env, log, near_bindgen, AccountId, Gas, Promise, PromiseError};
+
+use crate::{Contract, ContractExt, NO_DEPOSIT, TGAS, NO_ARGS};
 
 #[near_bindgen]
 impl Contract {
     // Public - query external greeting
     pub fn evaluate_hello_near(&mut self, contract_name: AccountId) -> Promise {
         // // First let's get a random string from random seed
-        let get_array: Vec<u8> = random_seed();
+        let get_array: Vec<u8> = env::random_seed();
         let random_string: String = String::from_utf8_lossy(&get_array).to_string();
-        println!("the random string is {:?}", random_string);
 
         let args = json!({ "message": random_string }).to_string().into_bytes();
 
@@ -22,7 +24,7 @@ impl Contract {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas(5 * TGAS))
-                    .evaluate_hello_near_callback(random_string, contract_name.clone()),
+                    .evaluate_hello_near_callback(random_string, env::predecessor_account_id()),
             )
     }
 
@@ -31,17 +33,20 @@ impl Contract {
         &mut self,
         #[callback_result] last_result: Result<String, PromiseError>,
         random_string: String,
-        contract_name: AccountId,
+        evaluated_user: AccountId,
     ) -> bool {
-        // The callback only has access to the last action's result
-        if let Ok(result) = last_result {
-            log!(format!("The last result is {result}"));
-            let output = result == random_string;
 
-            self.add_record_value(contract_name, String::from("hello_near_contract"), output);
-            output
+        if let Ok(result) = last_result {        
+            // Check if `get_greeting` returns the right string
+            let pass = result == random_string;
+
+            // Store the evaluation            
+            let mut user_evaluations = self.get_evaluations(evaluated_user);
+            user_evaluations.hello_near = pass;
+            self.records.insert(&evaluated_user, &user_evaluations);
+            pass
         } else {
-            log!("The batch call failed and all calls got reverted");
+            log!("ERROR: the contract did not return a value");
             false
         }
     }
