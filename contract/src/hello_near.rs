@@ -1,7 +1,7 @@
 use near_sdk::serde_json::json;
 use near_sdk::{env, log, near_bindgen, AccountId, Gas, Promise, PromiseError};
 
-use crate::{Contract, ContractExt, NO_DEPOSIT, TGAS, NO_ARGS};
+use crate::{Contract, ContractExt, NO_ARGS, NO_DEPOSIT, TGAS};
 
 #[near_bindgen]
 impl Contract {
@@ -35,15 +35,12 @@ impl Contract {
         random_string: String,
         evaluated_user: AccountId,
     ) -> bool {
-
-        if let Ok(result) = last_result {        
+        if let Ok(result) = last_result {
             // Check if `get_greeting` returns the right string
             let pass = result == random_string;
 
-            // Store the evaluation            
-            let mut user_evaluations = self.get_evaluations(evaluated_user);
-            user_evaluations.hello_near = pass;
-            self.records.insert(&evaluated_user, &user_evaluations);
+            // Store the evaluation
+            self.set_hello_near(evaluated_user.clone());
             pass
         } else {
             log!("ERROR: the contract did not return a value");

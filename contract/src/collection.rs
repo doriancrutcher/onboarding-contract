@@ -1,7 +1,8 @@
 use near_sdk::serde_json::json;
+use near_sdk::serde_json::Value;
 use near_sdk::{env, log, near_bindgen, AccountId, Gas, Promise, PromiseError};
 
-use crate::{Contract, ContractExt, NO_DEPOSIT, TGAS, NO_ARGS};
+use crate::{Contract, ContractExt, NO_ARGS, NO_DEPOSIT, TGAS};
 
 #[near_bindgen]
 impl Contract {
@@ -11,35 +12,65 @@ impl Contract {
         // you call add_to_map(params)
         // you call get_from_map(random_ki), where i is a random number between 0 and 5
         // you know that the expected value would be random_vi
+        log!("evaluate map");
 
-        // Lookup Map
-        let key = String::from_utf8_lossy(&env::random_seed()).to_string();
-        let value = String::from_utf8_lossy(&env::random_seed()).to_string();
+        let mut key_value_bytes_vec = Vec::new();
+        for i in 0..5 {
+            let key = String::from_utf8_lossy(&env::random_seed()).to_string();
+            let value = String::from_utf8_lossy(&env::random_seed()).to_string();
+            let key_value_bytes = json!({ "key": key, "value": value })
+                .to_string()
+                .into_bytes();
+            key_value_bytes_vec.push(key_value_bytes);
+        }
 
-        // Turn random values into arguments
-        let insert_lookup_args = json!({ "key": key, "value": value })
+        let keys_vec: Vec<String> = key_value_bytes_vec
+            .iter()
+            .map(|bytes| {
+                let json_value: near_sdk::serde_json::Value =
+                    near_sdk::serde_json::from_slice(bytes).unwrap();
+                json_value["key"].as_str().unwrap().to_owned()
+            })
+            .collect();
+
+        let value_vec: Vec<String> = key_value_bytes_vec
+            .iter()
+            .map(|bytes| {
+                let json_value: near_sdk::serde_json::Value =
+                    near_sdk::serde_json::from_slice(bytes).unwrap();
+                json_value["value"].as_str().unwrap().to_owned()
+            })
+            .collect();
+
+        let i = u32::from_le_bytes(env::random_seed()[..4].try_into().unwrap()) % 5;
+
+        for bytes in key_value_bytes_vec.iter() {
+            let promise = Promise::new(contract_name.clone()).function_call(
+                "add_to_map".to_string(),
+                bytes.clone(),
+                NO_DEPOSIT,
+                Gas(5 * TGAS),
+            );
+        }
+
+        let key_val = json!({"key":keys_vec[i as usize].clone()})
             .to_string()
             .into_bytes();
 
-        let get_lookup_args = json!({ "key": key }).to_string().into_bytes();
-
         Promise::new(contract_name.clone())
             .function_call(
-                "add_to_map".to_string(),
-                insert_lookup_args,
-                NO_DEPOSIT,
-                Gas(5 * TGAS),
-            )
-            .function_call(
                 "get_from_map".to_string(),
-                get_lookup_args,
+                key_val,
                 NO_DEPOSIT,
                 Gas(5 * TGAS),
             )
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas(5 * TGAS))
-                    .evaluate_map_callback(env::predecessor_account_id(), value),
+                    .evaluate_map_callback(
+                        env::predecessor_account_id(),
+                        value_vec[i as usize].clone(),
+                    ),
             )
     }
 
@@ -55,11 +86,8 @@ impl Contract {
             // Check if `get_from_map` returns the right string
             let pass = result == random_value;
 
-            // Store the evaluation
-            let mut user_evaluations = self.get_evaluations(evaluated_user);
-            user_evaluations.collections_map = pass;
-            self.records.insert(&evaluated_user, &user_evaluations);
-            pass
+            self.set_lookup_map_test(&evaluated_user);
+            true
         } else {
             log!("The batch call failed and all calls got reverted");
             false
@@ -81,33 +109,33 @@ impl Contract {
         Promise::new(contract_name.clone())
             .function_call(
                 "add_to_vector".to_string(),
-                Self::value_to_param(vector, 0),
+                Self::value_to_param(vector.clone(), 0),
                 NO_DEPOSIT,
                 Gas(5 * TGAS),
             )
             .function_call(
                 "add_to_vector".to_string(),
-                Self::value_to_param(vector, 1),
+                Self::value_to_param(vector.clone(), 1),
                 NO_DEPOSIT,
                 Gas(5 * TGAS),
             )
             .function_call(
                 "add_to_vector".to_string(),
-                Self::value_to_param(vector, 2),
+                Self::value_to_param(vector.clone(), 2),
                 NO_DEPOSIT,
                 Gas(5 * TGAS),
             )
             .function_call(
-                "get_full_vector".to_string(),
+                "get_full_array_test".to_string(),
                 NO_ARGS,
                 NO_DEPOSIT,
                 Gas(5 * TGAS),
             )
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(Gas(5 * TGAS))
-                    .evaluate_vec_callback(contract_name.clone()),
-            )
+        // .then(
+        //     Self::ext(env::current_account_id())
+        //         .with_static_gas(Gas(5 * TGAS))
+        //         .evaluate_vec_callback(contract_name.clone()),
+        // )
     }
 
     #[private]
@@ -119,14 +147,24 @@ impl Contract {
         //  The callback only has access to the last action's result
         if let Ok(result) = last_result {
             log!(format!("The last result is {:?}", result));
-            self.add_record_value(contract_name, String::from("evaluate_vector"), true);
+            self.set_lookup_map_test(&contract_name.clone());
+            self.check_collections_map(&contract_name.clone());
             true
         } else {
             log!("The batch call failed and all calls got reverted");
-            self.add_record_value(contract_name, String::from("evaluate_vector"), false);
-
             false
         }
+    }
+
+    pub fn clear_test_vector(contract_name: AccountId) {
+        let no_arg = json!("").to_string().into_bytes();
+
+        Promise::new(contract_name.clone()).function_call(
+            "clear_vector".to_string(),
+            no_arg.clone(),
+            NO_DEPOSIT,
+            Gas(5 ^ TGAS),
+        );
     }
 
     pub fn evaluate_check_collection_test_multi_vector(
@@ -137,7 +175,7 @@ impl Contract {
         let random_vec_value_array: Vec<u8> = env::random_seed();
 
         // Serialize into Json Arguments
-        let vec_multi_arg = json!({ "value": random_vec_value_array })
+        let vec_multi_arg = json!({ "vec_to_add": random_vec_value_array })
             .to_string()
             .into_bytes();
 
@@ -148,7 +186,7 @@ impl Contract {
                 "vector_multi_add".to_string(),
                 vec_multi_arg,
                 NO_DEPOSIT,
-                Gas(5 * TGAS),
+                Gas(50 * TGAS),
             )
             .function_call(
                 "get_full_array_test".to_string(),
@@ -177,11 +215,15 @@ impl Contract {
                 "The vector returned from the contract is {:?}",
                 result
             ));
-            self.add_record_value(contract_name, String::from("multi_vec"), true);
-            test_vector.eq(&result)
+            if (test_vector.eq(&result)) {
+                self.set_multi_vec_test(&contract_name);
+                self.check_collections_map(&contract_name);
+                true
+            } else {
+                false
+            }
         } else {
             log!("The batch call failed and all calls got reverted");
-            self.add_record_value(contract_name, String::from("multi_vec"), false);
             false
         }
     }
