@@ -40,7 +40,7 @@ impl Contract {
             let pass = result == random_string;
 
             // Store the evaluation
-            self.set_hello_near(evaluated_user.clone());
+            self.set_hello_near(evaluated_user.clone(), pass);
             pass
         } else {
             log!("ERROR: the contract did not return a value");
