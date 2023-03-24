@@ -105,6 +105,7 @@ impl Contract {
     pub fn evaluate_check_collection_test_vector(&mut self, contract_name: AccountId) -> Promise {
         // Vector
         let vector: Vec<u8> = env::random_seed();
+        let expected_vec: Vec<u8> = vector.clone()[0..=2].to_vec();
 
         Promise::new(contract_name.clone())
             .function_call(
@@ -134,7 +135,7 @@ impl Contract {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas(5 * TGAS))
-                    .evaluate_vec_callback(contract_name.clone(), vector[0..2].to_vec()),
+                    .evaluate_vec_callback(contract_name.clone(), expected_vec),
             )
     }
 

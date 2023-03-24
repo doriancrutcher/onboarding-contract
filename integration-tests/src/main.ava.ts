@@ -1,5 +1,5 @@
-import { Worker, NearAccount } from 'near-workspaces';
-import anyTest, { TestFn } from 'ava';
+import { Worker, NearAccount } from "near-workspaces";
+import anyTest, { TestFn } from "ava";
 
 const test = anyTest as TestFn<{
   worker: Worker;
@@ -12,33 +12,74 @@ test.beforeEach(async (t) => {
 
   // Deploy contract
   const root = worker.rootAccount;
-  const contract = await root.createSubAccount('test-account');
+  const evaluator = await root.createSubAccount("contract-checker");
+  const test_taker = await root.createSubAccount("test-taker");
+  const hello_near = await root.createSubAccount("hello-near");
   // Get wasm file path from package.json test script in folder above
-  await contract.deploy(
-    process.argv[2],
-  );
+  await evaluator.deploy(process.argv[2]);
+  await test_taker.deploy(process.argv[3]);
+  await hello_near.deploy(process.argv[4]);
 
   // Save state for test runs, it is unique for each test
   t.context.worker = worker;
-  t.context.accounts = { root, contract };
+  t.context.accounts = { root, evaluator, test_taker, hello_near };
 });
 
 test.afterEach.always(async (t) => {
   // Stop Sandbox server
   await t.context.worker.tearDown().catch((error) => {
-    console.log('Failed to stop the Sandbox:', error);
+    console.log("Failed to stop the Sandbox:", error);
   });
 });
 
-test('returns the default greeting', async (t) => {
-  const { contract } = t.context.accounts;
-  const message: string = await contract.view('get_greeting', {});
-  t.is(message, 'Hello');
+test("Check Hello Near Test", async (t) => {
+  const { evaluator, hello_near } = t.context.accounts;
+  let output = await evaluator.call(
+    evaluator,
+    "evaluate_hello_near",
+    {
+      contract_name: hello_near.accountId,
+    },
+    { gas: "300000000000000" }
+  );
+  t.true(output);
 });
 
-test('changes the message', async (t) => {
-  const { root, contract } = t.context.accounts;
-  await root.call(contract, 'set_greeting', { message: 'Howdy' });
-  const message: string = await contract.view('get_greeting', {});
-  t.is(message, 'Howdy');
+test("Contract Checker will test test taking contract's lookup Map", async (t) => {
+  const { evaluator, test_taker } = t.context.accounts;
+  let output = await evaluator.call(
+    evaluator,
+    "evaluate_map",
+    {
+      contract_name: test_taker.accountId,
+    },
+    { gas: "300000000000000" }
+  );
+  t.true(output);
+});
+
+test("Contract Checker will test the contract's vector implementation", async (t) => {
+  const { evaluator, test_taker } = t.context.accounts;
+  let output = await evaluator.call(
+    evaluator,
+    "evaluate_check_collection_test_vector",
+    {
+      contract_name: test_taker.accountId,
+    },
+    { gas: "300000000000000" }
+  );
+  console.log("vector output is ", output);
+  t.true(output);
+});
+
+test("contract can store a value in the lookup map", async (t) => {
+  const { root, evaluator, test_taker } = t.context.accounts;
+  await test_taker.call(test_taker, "add_to_map", {
+    key: "test",
+    value: "fen",
+  });
+  let result = await test_taker.view("get_from_map", {
+    key: "test",
+  });
+  t.is(result, "fen");
 });
