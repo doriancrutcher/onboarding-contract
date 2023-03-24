@@ -1,66 +1,56 @@
 use near_sdk::serde_json::json;
-use near_sdk::serde_json::Value;
 use near_sdk::{env, log, near_bindgen, AccountId, Gas, Promise, PromiseError};
 
 use crate::{Contract, ContractExt, NO_ARGS, NO_DEPOSIT, TGAS};
 
+struct KeyVal {
+    key: String,
+    val: String,
+}
+
 #[near_bindgen]
 impl Contract {
     // Test to evaluate a correct map implementation
-    pub fn evaluate_map(&mut self, contract_name: AccountId) -> Promise {
-        log!("evaluate map");
 
+    fn key_value_to_param(key: &String, value: &String) -> Vec<u8> {
+        json!({"key": key, "value": value}).to_string().into_bytes()
+    }
+
+    pub fn evaluate_map(&mut self, contract_name: AccountId) -> Promise {
         // create random keys and values and store them in a vector
-        let mut key_value_bytes_vec = Vec::new();
-        for i in 0..5 {
-            let key = String::from_utf8_lossy(&env::random_seed()).to_string();
-            let value = String::from_utf8_lossy(&env::random_seed()).to_string();
-            let key_value_bytes = json!({ "key": key, "value": value })
-                .to_string()
-                .into_bytes();
-            key_value_bytes_vec.push(key_value_bytes);
+
+        let mut keys_values_vec: Vec<KeyVal> = vec![];
+        let random_seed = env::random_seed();
+
+        for i in (0..10).step_by(2) {
+            let key = random_seed[i].to_string();
+            let val = random_seed[i + 1].to_string();
+            keys_values_vec.push(KeyVal { key, val })
         }
 
-        // Deserialize all the keys and store them in their own vector
-        let keys_vec: Vec<String> = key_value_bytes_vec
-            .iter()
-            .map(|bytes| {
-                let json_value: near_sdk::serde_json::Value =
-                    near_sdk::serde_json::from_slice(bytes).unwrap();
-                json_value["key"].as_str().unwrap().to_owned()
-            })
-            .collect();
-
-        // retreive all the values and store them in their own vector as well
-        let value_vec: Vec<String> = key_value_bytes_vec
-            .iter()
-            .map(|bytes| {
-                let json_value: near_sdk::serde_json::Value =
-                    near_sdk::serde_json::from_slice(bytes).unwrap();
-                json_value["value"].as_str().unwrap().to_owned()
-            })
-            .collect();
-
-        // get a random index value to pull a map value
-        let i = u32::from_le_bytes(env::random_seed()[..4].try_into().unwrap()) % 5;
+        let mut promise = Promise::new(contract_name.clone());
 
         // cycle through promises and call them to store the various keys and values
-
-        for bytes in key_value_bytes_vec.iter() {
-            let promise = Promise::new(contract_name.clone()).function_call(
+        for KeyVal { key, val } in keys_values_vec.iter() {
+            promise = promise.function_call(
                 "add_to_map".to_string(),
-                bytes.clone(),
+                Self::key_value_to_param(key, val),
                 NO_DEPOSIT,
                 Gas(5 * TGAS),
             );
         }
 
+        let i = random_seed[11] % 5;
+
         // retrieve a random key
-        let key_val = json!({"key":keys_vec[i as usize].clone()})
+        let rnd_key = keys_values_vec[i as usize].key.clone();
+        let rnd_val = keys_values_vec[i as usize].val.clone();
+
+        let key_val = json!({"key": rnd_key})
             .to_string()
             .into_bytes();
 
-        Promise::new(contract_name.clone())
+        promise
             .function_call(
                 "get_from_map".to_string(),
                 key_val,
@@ -72,7 +62,7 @@ impl Contract {
                     .with_static_gas(Gas(5 * TGAS))
                     .evaluate_map_callback(
                         env::predecessor_account_id(),
-                        value_vec[i as usize].clone(),
+                        rnd_val,
                     ),
             )
     }
@@ -90,7 +80,7 @@ impl Contract {
             // Check if `get_from_map` returns the right string
             let pass = result == random_value;
 
-            self.set_collections_map(&evaluated_user, pass);
+            self.set_evaluation_result(evaluated_user, "collections_map".to_string(), pass);
             pass
         } else {
             log!("The batch call failed and all calls got reverted");
@@ -135,7 +125,7 @@ impl Contract {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas(5 * TGAS))
-                    .evaluate_vec_callback(contract_name.clone(), expected_vec),
+                    .evaluate_vec_callback(env::predecessor_account_id(), expected_vec),
             )
     }
 
@@ -143,13 +133,14 @@ impl Contract {
     pub fn evaluate_vec_callback(
         &mut self,
         #[callback_result] last_result: Result<Vec<u8>, PromiseError>,
-        contract_name: AccountId,
+        evaluated_user: AccountId,
         expected_vec: Vec<u8>,
     ) -> bool {
         //  The callback only has access to the last action's result
         if let Ok(result) = last_result {
-            self.set_vec_test(&contract_name, expected_vec.eq(&result));
-            expected_vec.eq(&result)
+            let pass = expected_vec.eq(&result);
+            self.set_evaluation_result(evaluated_user, "collections_vec".to_string(), pass);
+            pass
         } else {
             log!("The batch call failed and all calls got reverted");
             false

@@ -17,7 +17,7 @@ pub const NO_ARGS: Vec<u8> = vec![];
 pub struct Evaluations {
     hello_near: bool,
     collections_map: bool,
-    vec_test: bool,
+    collections_vec: bool,
 }
 
 #[near_bindgen]
@@ -54,21 +54,16 @@ impl Contract {
         }
     }
 
-    pub fn set_hello_near(&mut self, account_id: AccountId, result: bool) {
+    pub fn set_evaluation_result(&mut self, account_id: AccountId, evaluation_name: String, result: bool) {
         let mut evals = self.get_evaluations(&account_id);
-        evals.hello_near = true;
-        self.records.insert(&account_id, &evals);
-    }
 
-    pub fn set_collections_map(&mut self, account_id: &AccountId, result: bool) {
-        let mut evals = self.get_evaluations(&account_id);
-        evals.collections_map = true;
-        self.records.insert(&account_id, &evals);
-    }
-
-    pub fn set_vec_test(&mut self, account_id: &AccountId, result: bool) {
-        let mut evals = self.get_evaluations(&account_id);
-        evals.vec_test = result;
+        match &*evaluation_name {
+            "hello_near" => evals.hello_near = result,
+            "collections_map" => evals.collections_map = result,
+            "collections_vec" => evals.collections_vec = result,
+            _ => panic!("Evaluation not found"),
+        }
+        
         self.records.insert(&account_id, &evals);
     }
 }
