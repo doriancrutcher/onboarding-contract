@@ -15,14 +15,16 @@ test.beforeEach(async (t) => {
   const evaluator = await root.createSubAccount("contract-checker");
   const test_taker = await root.createSubAccount("test-taker");
   const hello_near = await root.createSubAccount("hello-near");
+  const collections_near = await root.createSubAccount("collections-near");
+
   // Get wasm file path from package.json test script in folder above
   await evaluator.deploy(process.argv[2]);
-  await test_taker.deploy(process.argv[3]);
+  await collections_near.deploy(process.argv[3]);
   await hello_near.deploy(process.argv[4]);
 
   // Save state for test runs, it is unique for each test
   t.context.worker = worker;
-  t.context.accounts = { root, evaluator, test_taker, hello_near };
+  t.context.accounts = { root, evaluator, test_taker, hello_near, collections_near };
 });
 
 test.afterEach.always(async (t) => {
@@ -33,8 +35,8 @@ test.afterEach.always(async (t) => {
 });
 
 test("Check Hello Near Test", async (t) => {
-  const { evaluator, hello_near } = t.context.accounts;
-  let output = await evaluator.call(
+  const { evaluator, test_taker, hello_near } = t.context.accounts;
+  let output = await test_taker.call(
     evaluator,
     "evaluate_hello_near",
     {
@@ -46,12 +48,12 @@ test("Check Hello Near Test", async (t) => {
 });
 
 test("Contract Checker will test test taking contract's lookup Map", async (t) => {
-  const { evaluator, test_taker } = t.context.accounts;
-  let output = await evaluator.call(
+  const { evaluator, test_taker, collections_near } = t.context.accounts;
+  let output = await test_taker.call(
     evaluator,
     "evaluate_map",
     {
-      contract_name: test_taker.accountId,
+      contract_name: collections_near.accountId,
     },
     { gas: "300000000000000" }
   );
@@ -59,12 +61,12 @@ test("Contract Checker will test test taking contract's lookup Map", async (t) =
 });
 
 test("Contract Checker will test the contract's vector implementation", async (t) => {
-  const { evaluator, test_taker } = t.context.accounts;
-  let output = await evaluator.call(
+  const { evaluator, test_taker, collections_near } = t.context.accounts;
+  let output = await test_taker.call(
     evaluator,
     "evaluate_check_collection_test_vector",
     {
-      contract_name: test_taker.accountId,
+      contract_name: collections_near.accountId,
     },
     { gas: "300000000000000" }
   );
@@ -73,12 +75,12 @@ test("Contract Checker will test the contract's vector implementation", async (t
 });
 
 test("contract can store a value in the lookup map", async (t) => {
-  const { root, evaluator, test_taker } = t.context.accounts;
-  await test_taker.call(test_taker, "add_to_map", {
+  const { root, evaluator, collections_near } = t.context.accounts;
+  await collections_near.call(collections_near, "add_to_map", {
     key: "test",
     value: "fen",
   });
-  let result = await test_taker.view("get_from_map", {
+  let result = await collections_near.view("get_from_map", {
     key: "test",
   });
   t.is(result, "fen");

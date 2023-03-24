@@ -1,5 +1,6 @@
+use near_sdk::env::log_str;
 use near_sdk::serde_json::json;
-use near_sdk::{env, log, near_bindgen, AccountId, Gas, Promise, PromiseError};
+use near_sdk::{env, near_bindgen, AccountId, Gas, Promise, PromiseError};
 
 use crate::{Contract, ContractExt, NO_ARGS, NO_DEPOSIT, TGAS};
 
@@ -13,38 +14,53 @@ impl Contract {
 
         let args = json!({ "message": random_string }).to_string().into_bytes();
 
-        Promise::new(contract_name.clone())
+        let promise_check_owner = Promise::new(contract_name.clone()).function_call(
+            "get_owner".to_string(),
+            NO_ARGS,
+            NO_DEPOSIT,
+            Gas(5 * TGAS),
+        );
+
+        let promise_check_methods = Promise::new(contract_name.clone())
             .function_call("set_greeting".to_string(), args, NO_DEPOSIT, Gas(5 * TGAS))
             .function_call(
                 "get_greeting".to_string(),
                 NO_ARGS,
                 NO_DEPOSIT,
                 Gas(5 * TGAS),
-            )
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(Gas(5 * TGAS))
-                    .evaluate_hello_near_callback(random_string, env::predecessor_account_id()),
-            )
+            );
+
+        promise_check_owner.and(promise_check_methods).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(Gas(5 * TGAS))
+                .evaluate_hello_near_callback(random_string, env::predecessor_account_id()),
+        )
     }
 
     #[private]
     pub fn evaluate_hello_near_callback(
         &mut self,
-        #[callback_result] last_result: Result<String, PromiseError>,
-        random_string: String,
+        #[callback_result] owner_result: Result<AccountId, PromiseError>,
+        #[callback_result] greeting_result: Result<String, PromiseError>,
+        expected_greeting: String,
         evaluated_user: AccountId,
     ) -> bool {
-        if let Ok(result) = last_result {
-            // Check if `get_greeting` returns the right string
-            let pass = result == random_string;
 
-            // Store the evaluation
-            self.set_evaluation_result(evaluated_user.clone(), "hello_near".to_string(), pass);
-            pass
+        let mut pass = true;
+
+        if let Ok(greeting) = greeting_result {
+            pass = pass && greeting == expected_greeting;
         } else {
-            log!("ERROR: the contract did not return a value");
-            false
-        }
+            pass = false
+        };
+
+        if let Ok(owner) = owner_result {
+            pass = pass && owner == evaluated_user;
+        } else {
+            pass = false
+        };
+
+        self.set_evaluation_result(evaluated_user.clone(), "hello_near".to_string(), pass);
+        pass
     }
 }
